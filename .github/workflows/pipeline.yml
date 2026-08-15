@@ -1,0 +1,25 @@
+name: Pipeline
+
+on:
+  schedule:
+    - cron: "0 13 * * *"  # daily 13:00 UTC — dashboard aggregates over a lookback window, so daily keeps data fresh without needing sub-daily runs
+  workflow_dispatch: {}
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r requirements.txt
+
+      - run: python -m pipeline.run
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SEC_EDGAR_USER_AGENT: ${{ secrets.SEC_EDGAR_USER_AGENT }}
+          GITHUB_TOKEN: ${{ secrets.GH_API_TOKEN }}
+          PRODUCTHUNT_API_TOKEN: ${{ secrets.PRODUCTHUNT_API_TOKEN }}

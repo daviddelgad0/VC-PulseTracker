@@ -1,0 +1,30 @@
+# Funds and sectors this tracker cares about. Press/RSS articles get matched
+# against `funds` by name; `sectors` are keywords used the same way. Companies
+# aren't listed here manually — they get added to the tracked-companies table
+# automatically once press ties them to a watched fund (see pipeline/storage.py).
+# Edit freely; nothing else in the pipeline needs to change when you do.
+
+funds:
+  - Andreessen Horowitz
+  - a16z
+  - Sequoia Capital
+  - Benchmark
+  - Index Ventures
+  - Founders Fund
+  - Thrive Capital
+  - General Catalyst
+  - Greylock
+  - Accel
+  - Khosla Ventures
+  - Lightspeed Venture Partners
+  - Kleiner Perkins
+  - NEA
+  - Bessemer Venture Partners
+
+sectors:
+  - artificial intelligence
+  - AI
+  - machine learning
+  - foundation model
+  - developer tools
+  - infrastructure
