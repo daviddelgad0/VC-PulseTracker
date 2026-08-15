@@ -36,9 +36,10 @@ def _match_terms(text: str, terms: List[str]) -> List[str]:
     return [term for term in terms if term.lower() in text_lower]
 
 
-def fetch_recent_articles(watchlist: dict) -> List[Dict]:
-    """Return recent articles across FEEDS, tagged with any watchlist funds/
-    sectors they mention.
+def fetch_recent_articles(watchlist: dict, extra_feeds: Optional[Dict[str, str]] = None) -> List[Dict]:
+    """Return recent articles across FEEDS plus extra_feeds (dynamically
+    discovered fund feeds, see pipeline/fund_discovery.py), tagged with any
+    watchlist funds/sectors they mention.
 
     Each record: source, source_id (article link), company_name (best-effort),
     title, summary, url, matched_funds, matched_sectors, published_at.
@@ -46,8 +47,10 @@ def fetch_recent_articles(watchlist: dict) -> List[Dict]:
     funds = watchlist.get("funds", [])
     sectors = watchlist.get("sectors", [])
 
+    all_feeds = {**FEEDS, **(extra_feeds or {})}
+
     records: List[Dict] = []
-    for feed_name, feed_url in FEEDS.items():
+    for feed_name, feed_url in all_feeds.items():
         parsed = feedparser.parse(feed_url)
         for entry in parsed.entries:
             title = entry.get("title", "")

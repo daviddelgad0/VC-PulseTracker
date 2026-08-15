@@ -15,6 +15,7 @@ SEC_EDGAR_USER_AGENT = os.environ.get(
 )
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 PRODUCTHUNT_API_TOKEN = os.environ.get("PRODUCTHUNT_API_TOKEN", "")
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 
 
 def load_watchlist() -> dict:

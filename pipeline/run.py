@@ -8,6 +8,7 @@ from datetime import date, timedelta
 from pipeline.config import load_watchlist
 from pipeline.sources import github_activity, job_postings, producthunt, rss_feeds, sec_form_d
 from pipeline.storage import (
+    get_active_fund_feeds,
     get_tracked_companies,
     init_schema,
     promote_tracked_companies,
@@ -27,9 +28,10 @@ def main() -> None:
     stored = upsert_funding_events(form_d_records)
     print(f"sec_form_d: fetched {len(form_d_records)}, stored {stored}")
 
-    press_records = rss_feeds.fetch_recent_articles(watchlist)
+    extra_feeds = {row["fund_name"]: row["feed_url"] for row in get_active_fund_feeds()}
+    press_records = rss_feeds.fetch_recent_articles(watchlist, extra_feeds=extra_feeds)
     stored = upsert_press_mentions(press_records)
-    print(f"rss_feeds: fetched {len(press_records)}, stored {stored}")
+    print(f"rss_feeds: fetched {len(press_records)} (incl. {len(extra_feeds)} discovered fund feeds), stored {stored}")
 
     # Exclude cases where the "company" raising is actually one of the watched
     # funds itself (e.g. "Accel closes $550M India fund") — that's the fund

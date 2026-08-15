@@ -33,11 +33,15 @@ is what connects them — see `docs/DECISIONS.md` for why.
 
 **No LinkedIn scraping** — see `docs/DECISIONS.md`.
 
-Which funds/sectors matter is configured in `config/watchlist.yaml` — edit
-freely, no code changes needed. Companies aren't listed manually; they get
-promoted into the tracked list automatically once press ties them to a
-watchlist fund, which is what then drives job-posting/GitHub/Product Hunt
-tracking for that company.
+Which funds/sectors matter is configured two ways:
+- **Static**: `config/watchlist.yaml` — edit freely, no code changes needed.
+- **Dynamic**: the **Manage Watchlist** dashboard page — paste a fund's website
+  and it discovers their RSS feed (directly, or via an LLM fallback reading
+  the site's links) and adds it to the recurring pipeline.
+
+Companies aren't listed manually; they get promoted into the tracked list
+automatically once press ties them to a watchlist fund, which is what then
+drives job-posting/GitHub/Product Hunt tracking for that company.
 
 ## Repo layout
 
@@ -45,12 +49,15 @@ tracking for that company.
 config/watchlist.yaml         funds/sectors to track — edit this to retune the tracker
 pipeline/
   sources/                     one module per data source, normalized record shape
+  fund_discovery.py             paste a fund's URL -> find their RSS feed (LLM-assisted fallback)
   storage.py                    Postgres read/write
   run.py                         entry point the scheduled workflow calls
 dashboard/
+  theme.py                        shared dark-theme palette + Plotly styling
   app.py                          Weekly Digest (home page)
   pages/1_Capital_Flow.py          Form D volume + fund-mention charts
   pages/2_Founder_Signal.py        job postings / GitHub / Product Hunt feed
+  pages/3_Manage_Watchlist.py      discover + manage dynamic fund feeds
 .github/workflows/pipeline.yml   daily scheduled pipeline run
 docs/DECISIONS.md                 why things are built this way
 ```
@@ -72,7 +79,8 @@ streamlit run dashboard/app.py      # view locally at localhost:8501
   secrets needed: `DATABASE_URL`, `SEC_EDGAR_USER_AGENT`, `GH_API_TOKEN`
   (optional, raises GitHub API rate limit), `PRODUCTHUNT_API_TOKEN` (optional).
 - **Dashboard**: deployed on Streamlit Community Cloud from this repo
-  (`dashboard/app.py` as the entry point). Set `DATABASE_URL` and
-  `SEC_EDGAR_USER_AGENT` in the app's Secrets (Streamlit Cloud's settings UI) —
-  `dashboard/app.py` bridges `st.secrets` into env vars so `pipeline.config`
-  works unmodified.
+  (`dashboard/app.py` as the entry point). Set `DATABASE_URL`,
+  `SEC_EDGAR_USER_AGENT`, and `ANTHROPIC_API_KEY` (needed for the Manage
+  Watchlist page's LLM fallback) in the app's Secrets (Streamlit Cloud's
+  settings UI) — every dashboard page bridges `st.secrets` into env vars so
+  `pipeline.config` works unmodified.

@@ -55,6 +55,15 @@ CREATE TABLE IF NOT EXISTS product_signals (
     fetched_at TIMESTAMPTZ DEFAULT now(),
     PRIMARY KEY (source, source_id)
 );
+
+CREATE TABLE IF NOT EXISTS fund_feeds (
+    fund_name TEXT NOT NULL,
+    feed_url TEXT NOT NULL,
+    site_url TEXT,
+    discovered_at TIMESTAMPTZ DEFAULT now(),
+    is_active BOOLEAN DEFAULT true,
+    PRIMARY KEY (feed_url)
+);
 """
 
 
@@ -150,6 +159,28 @@ def upsert_product_signals(records: Iterable[Dict]) -> int:
             rows,
         )
     return len(rows)
+
+
+def add_fund_feed(fund_name: str, feed_url: str, site_url: Optional[str] = None) -> None:
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """INSERT INTO fund_feeds (fund_name, feed_url, site_url)
+               VALUES (%s, %s, %s)
+               ON CONFLICT (feed_url) DO UPDATE SET is_active = true""",
+            (fund_name, feed_url, site_url),
+        )
+
+
+def deactivate_fund_feed(feed_url: str) -> None:
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute("UPDATE fund_feeds SET is_active = false WHERE feed_url = %s", (feed_url,))
+
+
+def get_active_fund_feeds() -> List[Dict]:
+    with connect() as conn:
+        conn.row_factory = psycopg.rows.dict_row
+        cur = conn.execute("SELECT * FROM fund_feeds WHERE is_active = true ORDER BY discovered_at DESC")
+        return cur.fetchall()
 
 
 def get_tracked_companies(active_only: bool = True) -> List[str]:
