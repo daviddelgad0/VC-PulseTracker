@@ -56,13 +56,18 @@ CREATE TABLE IF NOT EXISTS product_signals (
     PRIMARY KEY (source, source_id)
 );
 
-CREATE TABLE IF NOT EXISTS fund_feeds (
+-- One row per fund a user has run through the Manage Watchlist discovery
+-- flow, whether or not a dedicated feed was found. feed_url is nullable so a
+-- fund can be kept on the watchlist "press-only" (see docs/DECISIONS.md) —
+-- distinct from just deleting it, which is what happened before: a failed
+-- discovery left no record at all.
+CREATE TABLE IF NOT EXISTS watched_funds (
     fund_name TEXT NOT NULL,
-    feed_url TEXT NOT NULL,
     site_url TEXT,
+    feed_url TEXT,
     discovered_at TIMESTAMPTZ DEFAULT now(),
     is_active BOOLEAN DEFAULT true,
-    PRIMARY KEY (feed_url)
+    PRIMARY KEY (fund_name)
 );
 """
 
@@ -161,25 +166,48 @@ def upsert_product_signals(records: Iterable[Dict]) -> int:
     return len(rows)
 
 
-def add_fund_feed(fund_name: str, feed_url: str, site_url: Optional[str] = None) -> None:
+def upsert_watched_fund(fund_name: str, site_url: Optional[str], feed_url: Optional[str]) -> None:
+    """Add/update a fund on the watchlist. feed_url may be None (discovered
+    with no dedicated feed — still tracked, just press-only). A later
+    discovery that finds nothing doesn't clear a feed_url found previously —
+    COALESCE keeps the last known-good feed rather than a flaky re-check
+    wiping it out."""
     with connect() as conn, conn.cursor() as cur:
         cur.execute(
-            """INSERT INTO fund_feeds (fund_name, feed_url, site_url)
+            """INSERT INTO watched_funds (fund_name, site_url, feed_url)
                VALUES (%s, %s, %s)
-               ON CONFLICT (feed_url) DO UPDATE SET is_active = true""",
-            (fund_name, feed_url, site_url),
+               ON CONFLICT (fund_name) DO UPDATE SET
+                 site_url = EXCLUDED.site_url,
+                 feed_url = COALESCE(EXCLUDED.feed_url, watched_funds.feed_url),
+                 is_active = true""",
+            (fund_name, site_url, feed_url),
         )
 
 
-def deactivate_fund_feed(feed_url: str) -> None:
+def deactivate_watched_fund(fund_name: str) -> None:
     with connect() as conn, conn.cursor() as cur:
-        cur.execute("UPDATE fund_feeds SET is_active = false WHERE feed_url = %s", (feed_url,))
+        cur.execute("UPDATE watched_funds SET is_active = false WHERE fund_name = %s", (fund_name,))
+
+
+def get_watched_funds(active_only: bool = True) -> List[Dict]:
+    query = "SELECT * FROM watched_funds"
+    if active_only:
+        query += " WHERE is_active = true"
+    query += " ORDER BY discovered_at DESC"
+    with connect() as conn:
+        conn.row_factory = psycopg.rows.dict_row
+        cur = conn.execute(query)
+        return cur.fetchall()
 
 
 def get_active_fund_feeds() -> List[Dict]:
+    """Only rows with a real dedicated feed — what the pipeline actually polls."""
     with connect() as conn:
         conn.row_factory = psycopg.rows.dict_row
-        cur = conn.execute("SELECT * FROM fund_feeds WHERE is_active = true ORDER BY discovered_at DESC")
+        cur = conn.execute(
+            "SELECT * FROM watched_funds WHERE is_active = true AND feed_url IS NOT NULL "
+            "ORDER BY discovered_at DESC"
+        )
         return cur.fetchall()
 
 

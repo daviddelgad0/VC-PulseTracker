@@ -171,3 +171,23 @@ must not fall through to the next slug guess in that case, since a coincidental
 match on an unrelated company for the next guess is worse than stopping. The
 fetch functions return `None` (try the next guess) vs. `[]` (real match,
 just empty right now) to keep that distinction explicit.
+
+## 2026-08-15 — Watched funds persist even with no dedicated feed found
+
+`fund_feeds` (feed_url as primary key, one row per confirmed feed) couldn't
+represent "I tried to discover this fund, found no feed, but still want it on
+the watchlist" — a failed discovery just left no record at all, so e.g.
+Sequoia Capital (no discoverable RSS feed anywhere on sequoiacap.com,
+confirmed by hand: no `<link rel=alternate>` tag, `/feed` and `/rss.xml` both
+redirect to a 404) would vanish from the UI the moment you navigated away.
+
+Replaced with `watched_funds`, keyed on `fund_name` instead, with `feed_url`
+nullable. The Manage Watchlist page now has an explicit "Add to watchlist
+anyway (press-only)" action when discovery finds nothing — the fund is still
+tracked, just relying on the general press feeds' name-matching rather than a
+dedicated feed. `get_active_fund_feeds()` (what the pipeline actually polls)
+filters to `feed_url IS NOT NULL`, so press-only funds don't break the fetch
+loop. Migrated the two existing rows (USV, a16z — a16z's feed was found via
+the LLM fallback pointing at their Substack, `a16z.substack.com/feed`) into
+the new table; left the old `fund_feeds` table in place unused rather than
+dropping it.
