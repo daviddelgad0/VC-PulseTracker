@@ -191,3 +191,33 @@ loop. Migrated the two existing rows (USV, a16z — a16z's feed was found via
 the LLM fallback pointing at their Substack, `a16z.substack.com/feed`) into
 the new table; left the old `fund_feeds` table in place unused rather than
 dropping it.
+
+## 2026-08-15 — Tried, then reverted: news-tag-feed fallback
+
+Added a third discovery tier for funds like Sequoia/Benchmark with no feed of
+their own: TechCrunch and Crunchbase News both expose a feed per tag
+(`/tag/<slug>/feed/`) that resolves cleanly and parses as valid RSS for
+basically any well-known fund name.
+
+Reverted after checking the actual content, prompted by the user pointing out
+"none of these funds have those feeds." They don't — TechCrunch's `benchmark`
+tag included "Starcloud raises $170M Series A" and "The leaderboard 'you
+can't game'," neither of which mentions the firm anywhere. The tag is a loose
+TechCrunch editorial grouping, not "articles about this fund," so presenting
+its feed as *the fund's* feed in the UI was actively misleading — even though
+downstream word-boundary matching would have silently dropped the unrelated
+articles (they don't contain "Benchmark" as a word), the mislabeling itself
+was the problem, and the tag content that *did* match would have been
+redundant with what the existing press feeds already catch.
+
+Kept one good thing that came out of building this: `_is_valid_feed()` in
+`pipeline/fund_discovery.py` now rejects a feed whose most recent entry is
+older than 180 days. Found this checking Crunchbase News's tag feeds, which
+resolve and parse fine but hadn't posted since 2022 — a real gap the
+original "200 + parses" check didn't catch, independent of the tag-feed idea
+itself.
+
+For funds with no real feed, the honest answer is the existing "add anyway,
+press-only" path on the Manage Watchlist page — tracked via the general press
+feeds' name-matching, which is exactly as reliable/unreliable as it always
+was, rather than a feed dressed up to look more authoritative than it is.

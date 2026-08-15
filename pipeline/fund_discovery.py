@@ -1,16 +1,28 @@
-"""LLM-assisted discovery of a fund's blog/news RSS feed from their website.
+"""Discovery of a fund's RSS feed, tried in order of cost/reliability:
 
-RSS autodiscovery (free, no LLM call) is tried first — many fund blogs expose
-a feed directly via a <link rel=alternate> tag or a common path. If that comes
-up empty, an LLM call classifies the homepage's links to find likely
-blog/news/portfolio index pages, and each candidate gets a second
-autodiscovery pass (blog index pages often expose a feed even when the
-homepage doesn't). Only confirmed feeds are ever meant to become part of the
-recurring pipeline — see pipeline/storage.py's fund_feeds table and
+1. RSS autodiscovery on the fund's own site (free) — a <link rel=alternate>
+   tag or a common path.
+2. LLM fallback (Claude Haiku, costs a fraction of a cent) — classifies the
+   homepage's links to find likely blog/news/portfolio pages when the above
+   comes up empty, then autodiscovers on each candidate.
+
+A news-aggregator tag-feed fallback (TechCrunch/Crunchbase News `/tag/<slug>/feed/`)
+was tried and reverted — see docs/DECISIONS.md. It resolves and "validates,"
+but the underlying tag is loosely scoped (TechCrunch's "benchmark" tag pulls
+in unrelated articles that never mention the firm), so it isn't actually the
+fund's content, and it's redundant with what the existing press feeds +
+text-matching already catch when a real mention exists.
+
+Only confirmed feeds are ever meant to become part of the recurring pipeline
+— see pipeline/storage.py's watched_funds table and
 dashboard/pages/3_Manage_Watchlist.py, which is what actually persists them.
+For funds with no real feed (own or otherwise), the Manage Watchlist page's
+"add anyway, press-only" path is the honest answer — tracked via the general
+press feeds' name-matching, not a feed that doesn't exist.
 """
 import json
 import re
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 from urllib.parse import urljoin, urlparse
 
@@ -23,6 +35,7 @@ from pipeline.config import ANTHROPIC_API_KEY
 COMMON_FEED_PATHS = ["/feed", "/feed/", "/blog/feed", "/rss.xml", "/index.xml", "/feed.xml"]
 HEADERS = {"User-Agent": "VC Pulse Tracker (fund feed discovery)"}
 LLM_MODEL = "claude-haiku-4-5-20251001"
+MAX_FEED_STALENESS_DAYS = 180
 
 
 def _is_valid_feed(url: str) -> bool:
@@ -30,7 +43,15 @@ def _is_valid_feed(url: str) -> bool:
         parsed = feedparser.parse(url)
     except Exception:
         return False
-    return not parsed.bozo and len(parsed.entries) > 0
+    if parsed.bozo or not parsed.entries:
+        return False
+
+    newest = parsed.entries[0]
+    time_struct = newest.get("published_parsed") or newest.get("updated_parsed")
+    if not time_struct:
+        return True  # no date to check — don't punish a feed for missing metadata
+    published_at = datetime(*time_struct[:6], tzinfo=timezone.utc)
+    return datetime.now(timezone.utc) - published_at <= timedelta(days=MAX_FEED_STALENESS_DAYS)
 
 
 def _autodiscover_feed(page_url: str) -> Optional[str]:
