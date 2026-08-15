@@ -23,12 +23,27 @@ FEEDS = {
 }
 
 _RAISE_VERBS = r"raises?|raised|lands?|landed|secures?|secured|closes?|closed|nabs?|nabbed|scores?|scored"
-_COMPANY_RE = re.compile(rf"^([A-Z][A-Za-z0-9&.,'\-\s]{{1,60}}?)\s+(?:{_RAISE_VERBS})\s", re.IGNORECASE)
+# Require a $ shortly after the verb — "secured" alone also means "secured
+# their systems" (cybersecurity), "closed" also means "shut down." A dollar
+# amount right after the verb is what actually distinguishes "X raises $10M"
+# from "enterprises that secured AI agent identities."
+_COMPANY_RE = re.compile(rf"^([A-Z][A-Za-z0-9&.,'\-\s]{{1,60}}?)\s+(?:{_RAISE_VERBS})\s+(?:a\s+)?\$", re.IGNORECASE)
+_DOLLAR_AMOUNT_RE = re.compile(r"\$\d")
 
 
 def _extract_company_name(title: str) -> Optional[str]:
     match = _COMPANY_RE.match(title or "")
     return match.group(1).strip() if match else None
+
+
+def _looks_like_funding_headline(title: str) -> bool:
+    """Gate for fund-name matches: a fund mention only counts as capital-flow
+    signal if the *headline* states a dollar amount — genuine funding news
+    always does ("X raises $10M"). Checking the summary instead was too loose:
+    these feeds return full article bodies as "summary," dense enough that an
+    unrelated tech article (API pricing, cost-savings figures) very often
+    contains some incidental $ figure too."""
+    return bool(_DOLLAR_AMOUNT_RE.search(title or ""))
 
 
 def _match_terms(text: str, terms: List[str]) -> List[str]:
@@ -63,6 +78,7 @@ def fetch_recent_articles(watchlist: dict, extra_feeds: Optional[Dict[str, str]]
             title = entry.get("title", "")
             summary = entry.get("summary", "")
             combined = f"{title} {summary}"
+            funding_headline = _looks_like_funding_headline(title)
 
             records.append(
                 {
@@ -72,7 +88,7 @@ def fetch_recent_articles(watchlist: dict, extra_feeds: Optional[Dict[str, str]]
                     "title": title,
                     "summary": summary,
                     "url": entry.get("link"),
-                    "matched_funds": _match_terms(combined, funds),
+                    "matched_funds": _match_terms(combined, funds) if funding_headline else [],
                     "matched_sectors": _match_terms(combined, sectors),
                     "published_at": entry.get("published"),
                 }

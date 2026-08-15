@@ -123,3 +123,51 @@ sensitively — real press mentions of the firm are reliably capitalized,
 `\bTerm\b` matched against the article text as-is, no `.lower()` on either
 side. Re-ran the pipeline after the fix — false positives dropped out, real
 matches (Accel, a16z, Lightspeed, Index Ventures) stayed.
+
+## 2026-08-15 — Fund matches gated on a dollar amount in the *headline*
+
+Word-boundary/case-sensitive matching (above) wasn't enough on its own: an
+unrelated cybersecurity article ("Four of five enterprises that **secured**
+AI agent identities...") still matched "Accel"/"NEA" as capital-flow signal,
+and the company-name regex mangled the sentence fragment before "secured"
+into a fake company name. "Secured" is a real raise-verb ("secured funding")
+but also ordinary English ("secured their systems") — the word alone can't
+disambiguate.
+
+Fix: require a `$` amount in the article *title* before accepting any fund
+match or attempting company-name extraction — `_looks_like_funding_headline()`
+in `pipeline/sources/rss_feeds.py`. Genuine funding headlines state the amount
+directly ("X raises $10M"); this also directly fixes the company-name
+extraction, since `_COMPANY_RE` now requires `$` right after the raise verb.
+
+First attempt gated on the *summary* instead of the title and was too loose —
+these RSS feeds return full article bodies as "summary," dense enough that
+unrelated tech articles (API pricing, cost-savings figures) very often
+contain some incidental `$` figure of their own (caught this by manually
+reviewing what was still matching after the first fix landed — "GLM-5.3...",
+"Gemini 3.7 Flash...", "DeepSeek Harness..." were all still false-positively
+tagged as fund activity). Title-only is precise because real funding
+headlines reliably lead with the number; body text is noisy.
+
+Stale rows already in Postgres from before this fix don't self-correct just
+by re-running the pipeline — RSS feeds only carry ~20-30 recent items, so an
+older article that's scrolled out of the feed window never gets re-fetched
+and re-upserted. Had to explicitly re-score existing `press_mentions` rows
+against the new logic and clear `matched_funds` on the ones that no longer
+qualify. Worth remembering for any future matching-logic change: fixing the
+function isn't enough, existing rows need an explicit backfill pass.
+
+## 2026-08-15 — Job/GitHub slug-guessing: try multiple conventions
+
+`job_postings.py` and `github_activity.py` guess a company's Greenhouse/Lever
+board or GitHub org slug from its name — there's no way to look this up
+directly. Was only trying one slugification (alphanumeric, no separators);
+now also tries a hyphenated form, since that's the other common convention,
+and strips legal suffixes ("Inc", "LLC", etc.) before guessing either way.
+
+Correctness note: a candidate slug that resolves (HTTP 200) but currently has
+zero open postings/repos is a *real, final* answer, not a miss — the code
+must not fall through to the next slug guess in that case, since a coincidental
+match on an unrelated company for the next guess is worse than stopping. The
+fetch functions return `None` (try the next guess) vs. `[]` (real match,
+just empty right now) to keep that distinction explicit.
