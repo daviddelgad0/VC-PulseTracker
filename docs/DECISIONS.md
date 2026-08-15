@@ -109,3 +109,17 @@ blue) rather than assigning a different hue per bar/fund, and carry no legend
 `st.metric` already matches the skill's stat-tile contract (label + value +
 optional delta) and avoids fighting Streamlit's internal DOM with brittle CSS
 selectors.
+
+## 2026-08-15 — Fund matching: case-sensitive, word-boundary
+
+Caught live on the deployed dashboard: case-insensitive substring matching was
+tagging unrelated AI-model news as "Benchmark" and "NEA" capital-deployment
+activity. Two collisions: "Accel" matched inside "accelerator" (fixed by word
+boundaries), and "Benchmark" the firm is indistinguishable from "benchmark"
+the common word under case-insensitive matching (fixed by matching case-
+sensitively — real press mentions of the firm are reliably capitalized,
+"Benchmark led the round", while generic usage is usually lowercase,
+"AI benchmarks"). `pipeline/sources/rss_feeds.py`'s `_match_terms` now uses
+`\bTerm\b` matched against the article text as-is, no `.lower()` on either
+side. Re-ran the pipeline after the fix — false positives dropped out, real
+matches (Accel, a16z, Lightspeed, Index Ventures) stayed.

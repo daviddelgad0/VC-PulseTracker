@@ -32,8 +32,15 @@ def _extract_company_name(title: str) -> Optional[str]:
 
 
 def _match_terms(text: str, terms: List[str]) -> List[str]:
-    text_lower = (text or "").lower()
-    return [term for term in terms if term.lower() in text_lower]
+    # Case-sensitive, word-boundary matching. Case-insensitive substring
+    # matching false-positived hard on fund names that are also common English
+    # words used in unrelated contexts — "Benchmark" (the firm) vs. "benchmark"
+    # (AI model benchmarks), "Accel" as a substring of "accelerator". Real firm
+    # mentions are reliably capitalized in press ("Benchmark led the round"),
+    # so case-sensitivity is actually the disambiguating signal here, not
+    # noise — see docs/DECISIONS.md.
+    text = text or ""
+    return [term for term in terms if re.search(rf"\b{re.escape(term)}\b", text)]
 
 
 def fetch_recent_articles(watchlist: dict, extra_feeds: Optional[Dict[str, str]] = None) -> List[Dict]:
